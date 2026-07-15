@@ -106,6 +106,7 @@ class App:
         self.args = args
         self.source = SimSource(size=args.size)
         self.source_error = None
+        self.camera_index = None
 
         # widgety
         self.sl_sens = ui.Slider("Citlivost na vlny", 0.01, 0.30, 0.06, "{:.3f}")
@@ -120,8 +121,17 @@ class App:
                         self.sl_release, self.sl_tilt, self.sl_reverb,
                         self.sl_gain, self.sl_wind]
         self.tg_water = ui.Toggle("Voda hraje (rituál)", True, "M")
-        self.tg_auto = ui.Toggle("Náhodné kapky v simulaci", True)
+        # kapky vypnuté: aplikace po startu mlčí, dokud se něco nepohne
+        self.tg_auto = ui.Toggle("Náhodné kapky v simulaci", False)
         self.toggles = [self.tg_water, self.tg_auto]
+
+        # tlačítka zdroje obrazu (viditelná volba místo tajných kláves)
+        self.src_buttons = [
+            (ui.Button("Simulace"), "sim", None),
+            (ui.Button("Kamera 0"), "camera", 0),
+            (ui.Button("Kamera 1"), "camera", 1),
+            (ui.Button("Kamera 2"), "camera", 2),
+        ]
 
         self.piano = ui.Piano(octaves=2)
         self.piano.base_midi = 48  # C3
@@ -139,7 +149,11 @@ class App:
         self.status_y = y + 6
         self.preview_rect = pygame.Rect(16, 64, 320, 320)
         self.spectrum_rect = pygame.Rect(352, 64, 320, 320)
-        self.bars_rect = pygame.Rect(16, 412, 656, 118)
+        bx = 16
+        for btn, _, _ in self.src_buttons:
+            btn.set_rect(bx, 410, 156)
+            bx += 168
+        self.bars_rect = pygame.Rect(16, 448, 656, 66)
         self.piano.set_rect(16, 548, 1088, 118)
 
         # stav hraní
@@ -164,14 +178,18 @@ class App:
 
     # ---- zdroje ----------------------------------------------------------
 
-    def switch_source(self, kind):
+    def switch_source(self, kind, cam_index=None):
         from .sources import CameraSource, VideoFileSource
         if not isinstance(self.source, SimSource):
             self.source.close()
         self.source_error = None
+        self.camera_index = None
         try:
             if kind == "camera":
-                self.source = CameraSource(self.args.camera if self.args.camera is not None else 0)
+                idx = cam_index if cam_index is not None else (
+                    self.args.camera if self.args.camera is not None else 0)
+                self.source = CameraSource(idx)
+                self.camera_index = idx
             elif kind == "video" and self.args.video:
                 self.source = VideoFileSource(self.args.video)
             else:
@@ -180,6 +198,17 @@ class App:
             self.source_error = str(e)
             self.source = SimSource(size=self.args.size)
         self.analyzer.reset()
+
+    def try_auto_camera(self):
+        """Při startu bez parametrů zkusí najít kameru (iPhone/webka);
+        když žádná není, zůstane simulace a napíše se to do stavu."""
+        for idx in (0, 1, 2):
+            self.switch_source("camera", cam_index=idx)
+            if self.source_error is None:
+                return
+        self.switch_source("sim")
+        self.source_error = ("Kamera nenalezena/nepovolená - běží simulace. "
+                             "Povol kameru v Nastavení a klikni na Kamera 0/1/2.")
 
     # ---- hlavní smyčka ----------------------------------------------------
 
@@ -241,6 +270,9 @@ class App:
             if t.handle(event):
                 if t is self.tg_water and not t.value:
                     self._silence_water()
+        for btn, kind, idx in self.src_buttons:
+            if btn.handle(event):
+                self.switch_source(kind, cam_index=idx)
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             midi = self.piano.note_at(event.pos)
@@ -316,6 +348,9 @@ class App:
             s.blit(pygame.transform.scale(surf, self.preview_rect.size),
                    self.preview_rect)
         pygame.draw.rect(s, ui.BORDER, self.preview_rect, 1, border_radius=6)
+        if self.source_error:
+            msg = self.font_small.render(self.source_error[:52], True, ui.ACCENT_R)
+            s.blit(msg, (self.preview_rect.x + 8, self.preview_rect.y + 8))
 
         # 2D spektrum
         if self.last_frame is not None and self.last_frame.spectrum_img is not None:
@@ -330,6 +365,12 @@ class App:
         cap2 = self.font_small.render(
             "2D spektrum (střed = nízké prostorové frekvence)", True, ui.DIM)
         s.blit(cap2, (self.spectrum_rect.x, self.spectrum_rect.bottom + 6))
+
+        # tlačítka zdroje
+        for btn, kind, idx in self.src_buttons:
+            active = (kind == "sim" and isinstance(self.source, SimSource)
+                      or kind == "camera" and self.camera_index == idx)
+            btn.draw(s, self.font_small, active)
 
         # harmonické
         if self.last_frame is not None:
@@ -410,6 +451,8 @@ def main(argv=None):
         app.switch_source("video")
     elif args.camera is not None:
         app.switch_source("camera")
+    else:
+        app.try_auto_camera()
     app.run()
     return 0
 

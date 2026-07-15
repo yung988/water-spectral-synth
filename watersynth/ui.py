@@ -84,6 +84,30 @@ class Toggle:
         screen.blit(font.render(text, True, TEXT), (r.x + 24, r.y + 3))
 
 
+class Button:
+    HEIGHT = 28
+
+    def __init__(self, label):
+        self.label = label
+        self.rect = pygame.Rect(0, 0, 0, 0)
+
+    def set_rect(self, x, y, w):
+        self.rect = pygame.Rect(x, y, w, self.HEIGHT)
+
+    def handle(self, event):
+        return (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+                and self.rect.collidepoint(event.pos))
+
+    def draw(self, screen, font, active=False):
+        pygame.draw.rect(screen, (26, 60, 84) if active else PANEL,
+                         self.rect, border_radius=6)
+        pygame.draw.rect(screen, ACCENT if active else BORDER,
+                         self.rect, 1, border_radius=6)
+        text = font.render(self.label, True, TEXT if active else DIM)
+        screen.blit(text, (self.rect.centerx - text.get_width() // 2,
+                           self.rect.centery - text.get_height() // 2))
+
+
 class Piano:
     """Dvouoktávová klaviatura: kreslení, klikání, zvýraznění noty."""
 
