@@ -86,8 +86,9 @@ class CameraSource(_ThreadedReader):
                 f"Kameru {index} se nepodařilo otevřít. Zkus jiný --camera index; "
                 "na Macu také zkontroluj oprávnění ke kameře pro Terminál "
                 "(Nastavení systému -> Soukromí a zabezpečení -> Kamera).")
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        # analýza běží na 128x128 - nízké rozlišení šetří CPU pro audio
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.name = f"Kamera {index}"
         self.start()
 

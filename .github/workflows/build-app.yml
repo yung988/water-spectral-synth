@@ -1,0 +1,45 @@
+name: Build macOS app
+
+# Každý push na main: otestuje engine, sestaví WaterSynth.app (arm64,
+# běží na macOS 11+) a nahraje ji do release "latest" - stažení vždy z:
+# https://github.com/yung988/water-spectral-synth/releases/latest
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14   # Apple Silicon runner
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalace závislostí
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Testy enginu
+        run: python tests/test_engine.py
+
+      - name: Build .app
+        run: |
+          cd packaging
+          pyinstaller --noconfirm watersynth.spec
+          cd dist
+          ditto -c -k --keepParent WaterSynth.app WaterSynth-arm64.zip
+
+      - name: Publikace do release "latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag -y || true
+          gh release create latest \
+            --title "WaterSynth - nejnovější build" \
+            --notes "Automatický build z commitu ${GITHUB_SHA::7}. Stáhni WaterSynth-arm64.zip, rozbal, první spuštění: pravý klik -> Otevřít." \
+            packaging/dist/WaterSynth-arm64.zip

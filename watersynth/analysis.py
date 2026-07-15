@@ -22,6 +22,11 @@ class FrameFeatures:
     energy: float               # celková energie 0..1 (po normalizaci)
     centroid: float             # těžiště spektra v indexech harmonických (1..H)
     diag_ratio: float           # podíl energie na diagonálách 0..1
+    onset: float = 0.0          # síla NOVÉHO pohybu hladiny 0..1 (z diff energie,
+                                #   po odečtení pomalého průměru - klid => 0)
+    motion: float = 0.0         # vyhlazená celková energie pohybu 0..1
+    band_energy: np.ndarray = field(default=None)  # energie 3 radiálních pásem
+                                #   [nízké, střední, vysoké prost. frekvence], 0..1
     spectrum_img: np.ndarray = field(default=None)  # log-magnituda NxN, fftshift, 0..1
 
 
@@ -57,9 +62,13 @@ class SpectralAnalyzer:
 
         self.prev = None
         self.agc = 0.05  # pomalé automatické vyrovnání úrovně
+        self.motion_baseline = 0.0   # pomalý průměr pohybu (odečítá se pro onset)
+        self.motion_smooth = 0.0     # vyhlazený pohyb (detekce ticha)
 
     def reset(self):
         self.prev = None
+        self.motion_baseline = 0.0
+        self.motion_smooth = 0.0
 
     def analyze(self, gray: np.ndarray, diff_mix: float = 0.0, gamma: float = 1.4,
                 want_spectrum_img: bool = True) -> FrameFeatures:
@@ -101,6 +110,27 @@ class SpectralAnalyzer:
         centroid = float((np.arange(1, h + 1) * s).sum() / den) if den > 1e-6 else 0.0
         energy = den / (2 * h)
 
+        # ---- pohyb hladiny (nezávisle na slideru diff_mix) ----------------
+        # motion: kolik se snímek změnil; onset: NÁRŮST pohybu nad pomalý
+        # průměr - ustálené vlnění tedy nespouští další a další noty
+        motion_raw = min(1.0, float(np.abs(diff).mean()) * 8.0)
+        # pojistka proti prstům/ruce: vlnky mění malou plochu obrazu, velký
+        # objekt (ruka nad hladinou) změní velkou souvislou plochu najednou
+        changed_area = float((np.abs(diff) > 0.15).mean())
+        big_object = min(1.0, max(0.0, (changed_area - 0.22) / 0.30))
+        onset = max(0.0, motion_raw - self.motion_baseline) * (1.0 - 0.75 * big_object)
+        onset = min(1.0, onset * 2.5)
+        rate = 0.06 if motion_raw > self.motion_baseline else 0.25
+        self.motion_baseline += (motion_raw - self.motion_baseline) * rate
+        self.motion_smooth += (motion_raw - self.motion_smooth) * 0.35
+
+        # energie tří radiálních pásem (hrubé / střední / jemné vlnky)
+        b1, b2 = max(1, h // 6), h // 2
+        bands = np.array([s[:b1].mean(), s[b1:b2].mean(), s[b2:].mean()],
+                         dtype=np.float32)
+        tot = float(bands.sum())
+        band_energy = bands / tot if tot > 1e-6 else bands
+
         spectrum_img = None
         if want_spectrum_img:
             logmag = np.log1p(mag)
@@ -111,5 +141,7 @@ class SpectralAnalyzer:
 
         return FrameFeatures(
             amps_l=amps_l, amps_r=amps_r, energy=energy,
-            centroid=centroid, diag_ratio=diag_ratio, spectrum_img=spectrum_img,
+            centroid=centroid, diag_ratio=diag_ratio,
+            onset=onset, motion=self.motion_smooth, band_energy=band_energy,
+            spectrum_img=spectrum_img,
         )
