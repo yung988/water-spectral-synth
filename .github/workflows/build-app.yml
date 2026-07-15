@@ -27,6 +27,11 @@ jobs:
       - name: Testy enginu
         run: python tests/test_engine.py
 
+      - name: Verze buildu (pro nabídku aktualizací v aplikaci)
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          printf 'BUILD_SHA = "%s"\n' "$SHORT_SHA" > watersynth/_buildinfo.py
+
       - name: Build .app
         run: |
           cd packaging

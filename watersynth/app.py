@@ -14,6 +14,7 @@ from .conductor import WaterConductor
 from .midiin import MidiInput
 from .sources import SimSource, to_square_gray
 from .synth import PadSynth
+from .updater import Updater
 
 ANALYSIS_FPS = 30
 
@@ -91,6 +92,7 @@ class App:
                               harmonics=min(64, args.harmonics))
         self.conductor = WaterConductor()
         self.midi = MidiInput()
+        self.updater = Updater()
 
         self.audio = None
         self.audio_error = None
@@ -183,6 +185,8 @@ class App:
 
     def run(self):
         while self.running:
+            if self.updater.state == "restarting":
+                self.running = False   # nová verze se právě spouští
             for event in pygame.event.get():
                 self.handle_event(event)
 
@@ -264,6 +268,8 @@ class App:
                 self.tg_water.value = not self.tg_water.value
                 if not self.tg_water.value:
                     self._silence_water()
+            elif event.key == pygame.K_i:
+                self.updater.install()
             elif event.key == pygame.K_1:
                 self.switch_source("sim")
             elif event.key == pygame.K_2:
@@ -360,6 +366,9 @@ class App:
         for line in lines:
             s.blit(self.font_small.render(str(line), True, ui.DIM), (700, y))
             y += 20
+        update_line = self.updater.status_line()
+        if update_line:
+            s.blit(self.font_small.render(update_line, True, ui.ACCENT), (700, y))
 
         self.piano.draw(s, self.font_small)
         pygame.display.flip()
